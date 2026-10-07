@@ -313,6 +313,70 @@ DESIGN = {
 }
 
 # ----------------------------------------------------------------------------
+# ARCore relevance per check: Core = the measurement relies on ARCore poses, gravity,
+# floor plane or wall planes; Helps = better accuracy or robustness, but the check works
+# without it; No = adds nothing.
+# ----------------------------------------------------------------------------
+ARCORE = {
+    30: ("Helps", "Gravity-aligned world frame gives the vertical reference in every frame, and the poses tie the bands so the full jamb height sits in one wall view. Gravity is good to about 0.1–0.3°, so this stays a screening check."),
+    31: ("Helps", "Poses give the flat per-wall view and tie the bands. Blockwork is textured enough for vertical-plane detection, which supplies the wall plane for that view."),
+    33: ("Helps", "Same as ID 30: gravity reference and band linkage."),
+    34: ("Core", "Floor plane gives the camera height and a floor reference even where the junction is hidden; poses and intrinsics turn the band's edges into heights."),
+    36: ("Helps", "Vertical-plane detection on blockwork gives the mm-per-pixel scale on the wall. The block height remains the finer ruler."),
+    37: ("Core", "Gravity frame defines horizontal and the floor plane fixes one height datum, so soffit heights across openings and walls share a reference."),
+    38: ("Helps", "Gravity reference for the column edges; poses tie the bands over the column's height."),
+    40: ("Core", "Floor plane gives the height reference; poses and intrinsics give the soffit height per opening."),
+    63: ("Core", "Wall plane distance (plane detection or a tag) with the intrinsics gives lintel depth and bearing in mm."),
+    69: ("No", "A process record. Honeycomb screening after deshuttering uses the ordinary frames."),
+    72: ("Helps", "Same as ID 31."),
+    76: ("Helps", "Same as ID 36."),
+    77: ("Helps", "Same as ID 30."),
+    79: ("Helps", "Same as ID 30."),
+    83: ("Core", "Floor plane gives the height reference for the sill top; poses and intrinsics do the conversion."),
+    84: ("Helps", "Vertical-plane detection returns each wall's normal; its angle to gravity is the lean, independent of edge detection. Plane normals are good to roughly 0.5–1°, so screening only, and detection fails on untextured walls."),
+    107: ("Helps", "Outdoors, ARCore tracks the walking video, so buttress positions come from the camera path and spacing is measured without the plot drawing."),
+    108: ("Helps", "Ground plane and poses give the wall height from the walking video; a hit test on the wall top in a close-up gives the thickness."),
+    109: ("Helps", "Poses let the frames be rectified per stretch of wall for the vision model. No help with flatness."),
+    110: ("No", "A level-instrument job. ARCore planes are good to a few cm, far from a level's millimetres."),
+    111: ("Helps", "An optional AR measure action: the SE taps the footing corners and a hit test returns their positions to a few cm for an overlay on the plan."),
+    123: ("Helps", "A rectified per-opening crop from the poses makes even gaps easier to judge. The judgement itself is still visual."),
+    125: ("Core", "Wall plane and intrinsics give frame width and height in mm; the floor plane gives the sill height. The design match stays with the vision model."),
+    127: ("Helps", "Gravity frame lets the shutter's top edge be checked for level in the same view. The latch test stays a tap."),
+    128: ("Core", "Poses and wall planes place each opening on the floor plan; the floor plane gives the sill height."),
+    171: ("Helps", "During the close-up, a hit test gives the camera-to-cover distance, so the pixel scale is known without a tape in frame."),
+    172: ("Core", "Floor plane (or the stair-tread plane) gives the railing height; poses tie the frames along the stair; gravity gives post plumb."),
+    176: ("Helps", "Hit-test distance gives the pixel scale for the close-up. Weld quality stays visual and throat thickness stays manual."),
+    186: ("Core", "Same as ID 125."),
+    199: ("No", "An approval record."),
+    206: ("No", "The phone lies on the bed and the raw accelerometer is the instrument; ARCore is not running and not needed."),
+    207: ("Core", "Floor plane and poses give the exact top-down warp of the downward band, so grout-line offsets measure in mm with the tile as the ruler."),
+    216: ("Core", "Floor plane gives the height reference; poses and the wall plane place the skirting edge."),
+    219: ("Helps", "Floor plane and poses give an undistorted top-down crop around each drain for the vision model."),
+    222: ("No", "An approval record."),
+    272: ("Helps", "Hit-test distance to the counter edge gives the pixel scale. A coin in frame remains the safer reference at ±1 mm."),
+    274: ("No", "Visual presence check; the ordinary frames are enough."),
+    286: ("No", "Visual match against the spec; no measurement involved."),
+    294: ("Helps", "Gravity reference for the corner lines and band linkage over their full height."),
+    296: ("Helps", "Same as ID 30."),
+    317: ("Core", "Poses and the wall plane place each box on the wall; the floor plane gives its height; count and positions compare with the electrical layout."),
+    318: ("Core", "Vertical-plane detection gives each wall's normal; the angle between adjacent normals is the corner angle (about ±1°). Needs textured walls; use the layout model on painted ones."),
+    319: ("Helps", "Same as ID 30."),
+    325: ("No", "Depth-from-motion does not work on a tripod and cannot see 3 mm anyway. Only a hardware ToF sensor could catch bows of 10 mm or more, and most current phones lack one."),
+    327: ("No", "Visual judgement of edge condition."),
+    328: ("Helps", "Gravity reference for the grill bars."),
+    329: ("Helps", "Same as ID 30."),
+    432: ("Core", "Floor plane gives height above the slab; add the FFL offset from the drawing before the flooring is laid."),
+    433: ("Core", "Same as ID 432."),
+    434: ("Core", "Floor plane gives height above the slab; add the FFL offset from the drawing before the flooring is laid."),
+    436: ("Helps", "Same as ID 84."),
+    437: ("Core", "Same as ID 128."),
+    438: ("No", "Visual presence of marks."),
+    441: ("Helps", "Hit-test distance gives the pixel scale on the close-up. The tile edge remains the finer ruler."),
+    456: ("Core", "Floor plane gives the height of the coat's top edge even where the floor-wall junction is hidden."),
+}
+ARCORE_LEVELS = ["Core", "Helps", "No"]
+
+# ----------------------------------------------------------------------------
 # Styling
 # ----------------------------------------------------------------------------
 FONT = "Arial"
@@ -383,6 +447,8 @@ ROWS.sort(key=lambda r: int(r["sno"]))
 assert len(ROWS) == 55, len(ROWS)
 missing = [r["sno"] for r in ROWS if int(r["sno"]) not in DESIGN]
 assert not missing, f"no design for sno {missing}"
+missing_ar = [r["sno"] for r in ROWS if int(r["sno"]) not in ARCORE]
+assert not missing_ar, f"no ARCore note for sno {missing_ar}"
 
 wb = Workbook()
 
@@ -412,6 +478,8 @@ HEADERS = [
     ("Automation level", "design", 11),
     ("Confidence", "design", 10),
     ("How it would work", "design", 56),
+    ("ARCore relevance", "design", 10),
+    ("How ARCore helps", "design", 44),
     ("Fallback or upgrade", "design", 40),
     ("Inputs the prompt needs", "design", 30),
     ("Target tolerance (typical; confirm against your spec)", "design", 26),
@@ -429,6 +497,12 @@ HEADERS = [
 COL = {h: get_column_letter(i + 1) for i, (h, _, _) in enumerate(HEADERS)}
 WIDTHS = {get_column_letter(i + 1): w for i, (_, _, w) in enumerate(HEADERS)}
 LAST_COL = get_column_letter(len(HEADERS))
+
+
+def grp_span(key, sep="-"):
+    cols = [get_column_letter(i + 1) for i, (_, g, _) in enumerate(HEADERS) if g == key]
+    return f"{cols[0]}{sep}{cols[-1]}"
+
 HEAD_ROW, FIRST, = 2, 3
 LAST = FIRST + len(ROWS) - 1
 RANGE_END = 200  # formulas look this far down so rows can be added
@@ -453,9 +527,9 @@ for i, (h, _, _) in enumerate(HEADERS):
     c.font, c.fill, c.alignment, c.border = F_HEAD, FILL_HEAD, CENTER, BORDER
 ws.row_dimensions[HEAD_ROW].height = 42
 ws[f"A{HEAD_ROW}"].comment = Comment(
-    "Columns A-L: copied from the uploaded QC sheet (Sheet2.csv, 2026-10-07); text as exported, "
-    "with TRUE/FALSE and YES/NO shown as Yes/No. Columns M-W: proposed automation design. "
-    "Columns X-AD: for the team to fill in. " + SOURCE_NOTE, "Workbook notes")
+    f"Columns {grp_span('src')}: copied from the uploaded QC sheet (Sheet2.csv, 2026-10-07); text as exported, "
+    f"with TRUE/FALSE and YES/NO shown as Yes/No. Columns {grp_span('design')}: proposed automation design. "
+    f"Columns {grp_span('track')}: for the team to fill in. " + SOURCE_NOTE, "Workbook notes")
 ws[f"{COL['Extra SE time (s)']}{HEAD_ROW}"].comment = Comment(
     "Looked up from the Methods tab by the primary method code. Change the seconds there, not here.", "Workbook notes")
 ws[f"{COL['Target tolerance (typical; confirm against your spec)']}{HEAD_ROW}"].comment = Comment(
@@ -491,6 +565,8 @@ for i, r in enumerate(ROWS):
         "Automation level": dsg["level"],
         "Confidence": dsg["conf"],
         "How it would work": dsg["how"],
+        "ARCore relevance": ARCORE[sno][0],
+        "How ARCore helps": ARCORE[sno][1],
         "Fallback or upgrade": dsg["fallback"],
         "Inputs the prompt needs": dsg["inputs"],
         "Target tolerance (typical; confirm against your spec)": dsg["tol"],
@@ -522,7 +598,7 @@ for i, r in enumerate(ROWS):
     ws[f"{COL['Validation sample (n)']}{row}"].number_format = "0"
     ws[f"{COL['Last updated']}{row}"].number_format = "yyyy-mm-dd"
     for h in ("ID (sno)", "No-go", "In 2.0", "Live today", "Same detector as (ID)", "Extra SE time (s)",
-              "Validation sample (n)", "Confidence", "Automation level", "Primary method"):
+              "Validation sample (n)", "Confidence", "Automation level", "Primary method", "ARCore relevance"):
         ws[f"{COL[h]}{row}"].alignment = Alignment(horizontal="center", vertical="top", wrap_text=True)
 
 set_widths(ws, WIDTHS)
@@ -554,6 +630,7 @@ add_list_validation(ws, '"' + ",".join(STATUSES) + '"', f"{COL['Status']}{FIRST}
 add_list_validation(ws, '"' + ",".join(LEVELS) + '"', f"{COL['Automation level']}{FIRST}:{COL['Automation level']}{RANGE_END}")
 add_list_validation(ws, '"' + ",".join(CONFIDENCES) + '"', f"{COL['Confidence']}{FIRST}:{COL['Confidence']}{RANGE_END}")
 add_list_validation(ws, f"=Methods!$A$2:$A${len(METHODS) + 1}", f"{COL['Primary method']}{FIRST}:{COL['Primary method']}{RANGE_END}")
+add_list_validation(ws, '"' + ",".join(ARCORE_LEVELS) + '"', f"{COL['ARCore relevance']}{FIRST}:{COL['ARCore relevance']}{RANGE_END}")
 
 # Conditional formatting on Status and Automation level
 status_ref = f"{COL['Status']}{FIRST}:{COL['Status']}{RANGE_END}"
@@ -565,6 +642,11 @@ level_ref = f"{COL['Automation level']}{FIRST}:{COL['Automation level']}{RANGE_E
 for label, color in (("Full", "C6EFCE"), ("Partial", "FFEB9C"), ("Evidence", "DDEBF7"), ("Manual", "F8CBAD")):
     ws.conditional_formatting.add(level_ref, CellIsRule(operator="equal", formula=[f'"{label}"'],
                                                         fill=PatternFill("solid", fgColor=color)))
+
+ar_ref = f"{COL['ARCore relevance']}{FIRST}:{COL['ARCore relevance']}{RANGE_END}"
+for label, color in (("Core", "C6EFCE"), ("Helps", "DDEBF7"), ("No", "D9D9D9")):
+    ws.conditional_formatting.add(ar_ref, CellIsRule(operator="equal", formula=[f'"{label}"'],
+                                                     fill=PatternFill("solid", fgColor=color)))
 
 # Named ranges for formulas elsewhere (plain A1 ranges are used; these are documented helpers)
 TR = "'QC Tracker'!"
@@ -732,6 +814,20 @@ label(wd, f"E{r}", "Total", bold=True)
 for c in "FGHI":
     num(wd, f"{c}{r}", f"=SUM({c}28:{c}{r - 1})")
 
+# By ARCore relevance (below the family block)
+AR = tr("ARCore relevance")
+r0 = 34 + len(families) + 2
+head(wd, [(f"A{r0}", "ARCore relevance"), (f"B{r0}", "Checks"), (f"C{r0}", "Of which critical")])
+for i, lv in enumerate(ARCORE_LEVELS):
+    r = r0 + 1 + i
+    label(wd, f"A{r}", lv)
+    num(wd, f"B{r}", f"=COUNTIF({AR},A{r})")
+    num(wd, f"C{r}", f"=COUNTIFS({AR},A{r},{PR},\"CRITICAL\")")
+r = r0 + 1 + len(ARCORE_LEVELS)
+label(wd, f"A{r}", "Total", bold=True)
+num(wd, f"B{r}", f"=SUM(B{r0 + 1}:B{r - 1})")
+num(wd, f"C{r}", f"=SUM(C{r0 + 1}:C{r - 1})")
+
 set_widths(wd, {"A": 46, "B": 10, "C": 16, "D": 20, "E": 40, "F": 11, "G": 11, "H": 12, "I": 9})
 wd.freeze_panes = "A4"
 
@@ -829,8 +925,8 @@ para("55 post-wall quality checks from the QC sheet, each mapped to the cheapest
      "with space to track the work.")
 blank()
 para("How to use this workbook", bold=True, size=11)
-pair("QC Tracker", "One row per check. Columns A to L are copied from the QC sheet. Columns M to W hold the proposed design "
-     "for each check. Columns X to AD (yellow) are yours to fill as work progresses. Filter and sort with the header "
+pair("QC Tracker", f"One row per check. Columns {grp_span('src', ' to ')} are copied from the QC sheet. Columns {grp_span('design', ' to ')} hold the proposed design "
+     f"for each check. Columns {grp_span('track', ' to ')} (yellow) are yours to fill as work progresses. Filter and sort with the header "
      "buttons. The + controls above the columns collapse Stage/Task and the flag columns, leaving the check text, the "
      "design and the tracking in view.")
 pair("Methods", "The method codes used in the tracker: what each asks of the site engineer, the added seconds it costs "
@@ -863,6 +959,8 @@ pair("Evidence", "The system records proof or an approval. The judgement stays w
 pair("Manual", "Stays with the SE and a physical tool. The app records the reading.")
 pair("Confidence", "How likely the primary method reaches useful accuracy in production with the current gyro capture: High, Medium or Low.")
 pair("Same detector as", "The ID of the check whose detector also serves this row. Build it once and run it at both stages.")
+pair("ARCore relevance", "Core: the measurement relies on ARCore poses, gravity, the floor plane or wall planes. Helps: better accuracy or "
+     "robustness, but the check works without it. No: ARCore adds nothing to this check.")
 r = R[0]
 wr[f"B{r}"] = "Distinct detectors"; wr[f"B{r}"].font = F_BOLD
 wr[f"C{r}"] = '=Dashboard!B6&" detectors cover "&Dashboard!B5&" checks."'; wr[f"C{r}"].font = F_GREEN; R[0] += 1
@@ -886,6 +984,19 @@ steps = [
     "The added site time stays at seconds per room.",
 ]
 for s in steps:
+    para(s)
+blank()
+para("Using ARCore on the capture device", bold=True, size=11)
+for s in [
+    "Start the session at the door and walk to the tripod position with the camera on. Pure rotation on a tripod gives "
+    "visual-inertial tracking nothing to work with; the walk-in sets the scale, finds the floor plane and usually some walls.",
+    "Take from ARCore: the pose of every frame in a gravity-aligned world frame, the floor plane (camera height, with no fixed "
+    "tripod height or ceiling height needed), calibrated intrinsics, and a session recording for cloud processing.",
+    "Grab full-resolution stills through the shared camera and match them to poses by timestamp. ARCore's own image is 1 to 2 MP, "
+    "which halves the measurement resolution.",
+    "Depth-from-motion does not work during the sweep, and plane detection fails on painted walls. Tags on the datum line remain "
+    "the reliable wall anchor at the putty and paint stages and wherever ±10 mm is wanted.",
+]:
     para(s)
 blank()
 para("Why not send the cylinder straight to the language model", bold=True, size=11)
