@@ -1,0 +1,56 @@
+ID (sno),Approach group,Approach description
+30,Gyro + Gemini: geometry,Select the gyro frames that show the openings; Gemini checks for right angles.
+31,New action: phone IMU,"Use the phone IMU, or have the SE take a photo with the tool placed on the wall."
+33,New action: phone IMU,"Use the phone IMU, or have the SE take a photo with the tool placed in the opening."
+34,New action: photo with tape or tool,SE takes a photo with the measuring tape held against the band.
+36,Gyro + Gemini: known object as scale,Blocks come in about 10 types. Gemini identifies the block type and judges the mortar thickness relative to the block; one block type has no mortar.
+37,Gyro + Gemini: geometry,"Select the gyro frames that show the openings; Gemini checks the soffits for level, same frames as the right-angle check."
+38,New action: phone IMU,Place the phone's edge against the column at the joint above the lintel and read the tilt.
+40,New action: photo with tape or tool,SE takes a photo with the measuring tape from floor to lintel.
+63,New action: photo with tape or tool,SE takes a photo with the measuring tape across the lintel.
+69,New action: short video,Short video focused on the concreting with the vibrator running. SE: turn the vibrator on before starting the gyro.
+72,New action: phone IMU,"Use the phone IMU, or have the SE take a photo with the tool placed on the wall."
+76,Gyro + Gemini: known object as scale,Blocks come in about 10 types. Gemini identifies the block type and judges the mortar thickness relative to the block; one block type has no mortar.
+77,Gyro + Gemini: geometry,Select the gyro frames that show the openings; Gemini checks for right angles.
+79,New action: phone IMU,"Use the phone IMU, or have the SE take a photo with the tool placed in the opening."
+83,To be decided,
+84,New action: phone IMU,Place the phone flat against the wall at two or three points and read the tilt.
+107,To be decided,
+108,To be decided,
+109,To be decided,
+110,To be decided,
+111,To be decided,
+123,Gyro + Gemini: appearance,"Select the gyro frames that show the doors, windows and grills; Gemini checks that the finishing is uniform."
+125,To be decided,
+127,Gyro + Gemini: appearance,Select the gyro frames that show the shutters; Gemini checks alignment and level. Latching still needs the SE.
+128,To be decided,
+171,To be decided,
+172,New action: photo with tape or tool,SE takes a photo with the measuring tape on the railing.
+176,Gyro + Gemini: appearance,Select the gyro frames that show the welded joints; Gemini checks them.
+186,Gyro + Gemini: appearance,Select the gyro frames that show the finished doors and windows; Gemini checks them against the contract.
+199,Not a QC,SE: should not be a QC; it is a client approval.
+206,New action: phone IMU,Lay the phone on the mortar bed and read the slope from the IMU.
+207,Gyro + Gemini: geometry,"Select the gyro frames that show the floor; Gemini checks the joint alignment. SE: can be done without tools, move to gyro."
+216,Gyro + Gemini: height,Select the gyro frames that show the skirting; Gemini checks the height against the standard (note says 3 to 4 feet).
+219,Gyro + Gemini: appearance,Select the gyro frames that show the drain; Gemini checks the tile cut.
+222,Not a QC,Same check as ID 199; SE: should not be a QC.
+272,To be decided,
+274,Gyro + Gemini: appearance,Take frames from the gyro and ask Gemini.
+286,To be decided,
+294,Gyro + Gemini: geometry,Take frames from the gyro and ask Gemini.
+296,Gyro + Gemini: geometry,Take frames from the gyro and ask Gemini.
+317,Gyro + Gemini: height,"Find the boxes in the gyro video, sort them into upper, middle and lower bands, and check each is at a proper height."
+318,Gyro + Gemini: geometry,Gyro captures the corners; Gemini checks the wall corners for right angles.
+319,Gyro + Gemini: geometry,Gyro captures the openings; Gemini checks them for right angles.
+325,New action: short video,Cover the straight edge with a short video.
+327,Gyro + Gemini: appearance,Select the gyro frames that show the junctions; Gemini checks the edges.
+328,Gyro + Gemini: geometry,In the gyro video find the frames that show the window from the side and compare with the edge; Gemini can do the comparison.
+329,Gyro + Gemini: geometry,In the gyro video find the frames that show the window from the side and compare with the edge; Gemini can do the comparison.
+432,Gyro + Gemini: height,Select the gyro frames that show the points; judge the height using the aluminium box as the reference and the band approach; Gemini checks.
+433,Gyro + Gemini: height,Select the gyro frames that show the points; judge the height using the aluminium box as the reference and the band approach; Gemini checks.
+434,Gyro + Gemini: height,"Select the gyro frames that show the points (mixer, basin); judge the height using the aluminium box as the reference and the band approach; Gemini checks."
+436,New action: phone IMU,Straight edge on the wall plus the phone IMU.
+437,Gyro + Gemini: height,"Select the gyro frames that show the ventilator; judge the height from its closeness to the ceiling or beam if visible; Gemini checks, band approach."
+438,New action: phone IMU,Straight edge across the bull marks with the phone on it.
+441,Gyro + Gemini: appearance,Spacers must be present in at least a few joints.
+456,Gyro + Gemini: height,Take frames from the gyro and ask Gemini (height of the coat line).

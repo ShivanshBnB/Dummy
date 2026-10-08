@@ -2,15 +2,21 @@
 """Build qc_automation_tracker.xlsx from the post-wall QC export.
 
 Usage:  python3 -I build_workbook.py [data/qc_post_wall_source.csv] [qc_automation_tracker.xlsx]
+                                    [--overlay data/qc_tracker_export_YYYY-MM-DD.csv]
+
+With --overlay, the QC Tracker tab exported from the team's working copy (Google Sheets
+or Excel) is read back: the site engineer's columns, the approach columns and the tracking
+columns in it override the values in this script, so the export is the master copy.
 
 The tracker keeps the useful columns of the export, adds a proposed automation
 design per check, and leaves tracking columns for the team to fill. Every
 figure on the Dashboard is a formula over the QC Tracker tab.
 """
+import argparse
 import csv
 import datetime as dt
 import math
-import sys
+import re
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -21,8 +27,14 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
-SRC = Path(sys.argv[1] if len(sys.argv) > 1 else "data/qc_post_wall_source.csv")
-OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "qc_automation_tracker.xlsx")
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("source", nargs="?", default="data/qc_post_wall_source.csv", help="post-wall QC export (CSV)")
+ap.add_argument("out", nargs="?", default="qc_automation_tracker.xlsx", help="workbook to write")
+ap.add_argument("--overlay", default=None, metavar="TRACKER_CSV",
+                help="the QC Tracker tab exported as CSV; its SE, approach and tracking columns override the script")
+args = ap.parse_args()
+SRC, OUT = Path(args.source), Path(args.out)
+OVERLAY = Path(args.overlay) if args.overlay else None
 SOURCE_NOTE = "Source: Tool QC Automation - Sheet2.csv (post-wall QC export), uploaded 2026-10-07"
 
 # ----------------------------------------------------------------------------
@@ -377,6 +389,88 @@ ARCORE = {
 ARCORE_LEVELS = ["Core", "Helps", "No"]
 
 # ----------------------------------------------------------------------------
+# Approach, from the team's free-text column, split into a group and a description.
+# Gyro groups are split by what Gemini has to judge; new-action groups by the action.
+# ----------------------------------------------------------------------------
+APPROACH_GROUPS = [
+    "Gyro + Gemini: appearance",
+    "Gyro + Gemini: geometry",
+    "Gyro + Gemini: height",
+    "Gyro + Gemini: known object as scale",
+    "New action: phone IMU",
+    "New action: photo with tape or tool",
+    "New action: short video",
+    "Not a QC",
+    "To be decided",
+]
+_IMU_OR_PHOTO = "Use the phone IMU, or have the SE take a photo with the tool placed on the wall."
+_OPENINGS_RIGHT_ANGLE = "Select the gyro frames that show the openings; Gemini checks for right angles."
+_BLOCK_TYPE = ("Blocks come in about 10 types. Gemini identifies the block type and judges the mortar thickness "
+               "relative to the block; one block type has no mortar.")
+_WINDOW_SIDE = ("In the gyro video find the frames that show the window from the side and compare with the edge; "
+                "Gemini can do the comparison.")
+_POINTS_BAND = ("Select the gyro frames that show the points; judge the height using the aluminium box as the "
+                "reference and the band approach; Gemini checks.")
+APPROACH = {
+    30: ("Gyro + Gemini: geometry", _OPENINGS_RIGHT_ANGLE),
+    31: ("New action: phone IMU", _IMU_OR_PHOTO),
+    33: ("New action: phone IMU", "Use the phone IMU, or have the SE take a photo with the tool placed in the opening."),
+    34: ("New action: photo with tape or tool", "SE takes a photo with the measuring tape held against the band."),
+    36: ("Gyro + Gemini: known object as scale", _BLOCK_TYPE),
+    37: ("Gyro + Gemini: geometry", "Select the gyro frames that show the openings; Gemini checks the soffits for level, same frames as the right-angle check."),
+    38: ("New action: phone IMU", "Place the phone's edge against the column at the joint above the lintel and read the tilt."),
+    40: ("New action: photo with tape or tool", "SE takes a photo with the measuring tape from floor to lintel."),
+    63: ("New action: photo with tape or tool", "SE takes a photo with the measuring tape across the lintel."),
+    69: ("New action: short video", "Short video focused on the concreting with the vibrator running. SE: turn the vibrator on before starting the gyro."),
+    72: ("New action: phone IMU", _IMU_OR_PHOTO),
+    76: ("Gyro + Gemini: known object as scale", _BLOCK_TYPE),
+    77: ("Gyro + Gemini: geometry", _OPENINGS_RIGHT_ANGLE),
+    79: ("New action: phone IMU", "Use the phone IMU, or have the SE take a photo with the tool placed in the opening."),
+    83: ("To be decided", None),
+    84: ("New action: phone IMU", "Place the phone flat against the wall at two or three points and read the tilt."),
+    107: ("To be decided", None),
+    108: ("To be decided", None),
+    109: ("To be decided", None),
+    110: ("To be decided", None),
+    111: ("To be decided", None),
+    123: ("Gyro + Gemini: appearance", "Select the gyro frames that show the doors, windows and grills; Gemini checks that the finishing is uniform."),
+    125: ("To be decided", None),
+    127: ("Gyro + Gemini: appearance", "Select the gyro frames that show the shutters; Gemini checks alignment and level. Latching still needs the SE."),
+    128: ("To be decided", None),
+    171: ("To be decided", None),
+    172: ("New action: photo with tape or tool", "SE takes a photo with the measuring tape on the railing."),
+    176: ("Gyro + Gemini: appearance", "Select the gyro frames that show the welded joints; Gemini checks them."),
+    186: ("Gyro + Gemini: appearance", "Select the gyro frames that show the finished doors and windows; Gemini checks them against the contract."),
+    199: ("Not a QC", "SE: should not be a QC; it is a client approval."),
+    206: ("New action: phone IMU", "Lay the phone on the mortar bed and read the slope from the IMU."),
+    207: ("Gyro + Gemini: geometry", "Select the gyro frames that show the floor; Gemini checks the joint alignment. SE: can be done without tools, move to gyro."),
+    216: ("Gyro + Gemini: height", "Select the gyro frames that show the skirting; Gemini checks the height against the standard (note says 3 to 4 feet)."),
+    219: ("Gyro + Gemini: appearance", "Select the gyro frames that show the drain; Gemini checks the tile cut."),
+    222: ("Not a QC", "Same check as ID 199; SE: should not be a QC."),
+    272: ("To be decided", None),
+    274: ("Gyro + Gemini: appearance", "Take frames from the gyro and ask Gemini."),
+    286: ("To be decided", None),
+    294: ("Gyro + Gemini: geometry", "Take frames from the gyro and ask Gemini."),
+    296: ("Gyro + Gemini: geometry", "Take frames from the gyro and ask Gemini."),
+    317: ("Gyro + Gemini: height", "Find the boxes in the gyro video, sort them into upper, middle and lower bands, and check each is at a proper height."),
+    318: ("Gyro + Gemini: geometry", "Gyro captures the corners; Gemini checks the wall corners for right angles."),
+    319: ("Gyro + Gemini: geometry", "Gyro captures the openings; Gemini checks them for right angles."),
+    325: ("New action: short video", "Cover the straight edge with a short video."),
+    327: ("Gyro + Gemini: appearance", "Select the gyro frames that show the junctions; Gemini checks the edges."),
+    328: ("Gyro + Gemini: geometry", _WINDOW_SIDE),
+    329: ("Gyro + Gemini: geometry", _WINDOW_SIDE),
+    432: ("Gyro + Gemini: height", _POINTS_BAND),
+    433: ("Gyro + Gemini: height", _POINTS_BAND),
+    434: ("Gyro + Gemini: height", "Select the gyro frames that show the points (mixer, basin); judge the height using the aluminium box as the reference and the band approach; Gemini checks."),
+    436: ("New action: phone IMU", "Straight edge on the wall plus the phone IMU."),
+    437: ("Gyro + Gemini: height", "Select the gyro frames that show the ventilator; judge the height from its closeness to the ceiling or beam if visible; Gemini checks, band approach."),
+    438: ("New action: phone IMU", "Straight edge across the bull marks with the phone on it."),
+    441: ("Gyro + Gemini: appearance", "Spacers must be present in at least a few joints."),
+    456: ("Gyro + Gemini: height", "Take frames from the gyro and ask Gemini (height of the coat line)."),
+}
+FEASIBILITY = ["High", "Medium", "Low"]
+
+# ----------------------------------------------------------------------------
 # Styling
 # ----------------------------------------------------------------------------
 FONT = "Arial"
@@ -449,6 +543,53 @@ missing = [r["sno"] for r in ROWS if int(r["sno"]) not in DESIGN]
 assert not missing, f"no design for sno {missing}"
 missing_ar = [r["sno"] for r in ROWS if int(r["sno"]) not in ARCORE]
 assert not missing_ar, f"no ARCore note for sno {missing_ar}"
+missing_ap = [r["sno"] for r in ROWS if int(r["sno"]) not in APPROACH]
+assert not missing_ap, f"no approach for sno {missing_ap}"
+
+# Overlay: the tracker tab exported from the team's working copy. Header row is the one
+# holding "ID (sno)"; an unnamed column is the free-text approach column.
+OVERLAY_ROWS, OVERLAY_RAW_APPROACH = {}, {}
+if OVERLAY:
+    with OVERLAY.open(encoding="utf-8-sig", newline="") as fh:
+        raw = list(csv.reader(fh))
+    hi = next(i for i, r in enumerate(raw) if "ID (sno)" in [c.strip() for c in r])
+    hdr = [c.strip() for c in raw[hi]]
+    for r in raw[hi + 1:]:
+        if not r or not r[0].strip().isdigit():
+            continue
+        rec, unnamed = {}, []
+        for j, h in enumerate(hdr):
+            v = r[j].strip() if j < len(r) else ""
+            if h == "":
+                if v:
+                    unnamed.append(v)
+            else:
+                rec[h] = v
+        OVERLAY_ROWS[int(r[0])] = rec
+        if unnamed:
+            OVERLAY_RAW_APPROACH[int(r[0])] = " / ".join(unnamed)
+
+# Columns an overlay may override (blank cells in the export keep the script's value)
+OVERLAY_TEXT_COLS = [
+    "Check family", "What to measure or judge", "SE Comments", "Accuracy Requirements SE", "Primary method",
+    "Automation level", "Confidence", "Feasibility with Gyro", "How it would work", "ARCore relevance",
+    "How ARCore helps", "Fallback or upgrade", "Inputs the prompt needs",
+    "Target tolerance (typical; confirm against your spec)", "Status", "Owner", "Target sprint", "Notes",
+]
+
+
+def parse_percent(v):
+    v = v.replace("%", "").strip()
+    try:
+        x = float(v)
+    except ValueError:
+        return None
+    return x / 100 if "%" in v or x > 1 else x
+
+
+def parse_date(v):
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", v)
+    return dt.date(int(m[1]), int(m[2]), int(m[3])) if m else v
 
 wb = Workbook()
 
@@ -474,9 +615,14 @@ HEADERS = [
     ("Live today", "src", 8),
     ("Check family", "design", 17),
     ("What to measure or judge", "design", 30),
+    ("SE Comments", "design", 22),
+    ("Accuracy Requirements SE", "design", 18),
     ("Primary method", "design", 11),
     ("Automation level", "design", 11),
     ("Confidence", "design", 10),
+    ("Feasibility with Gyro", "design", 11),
+    ("Approach group", "design", 24),
+    ("Approach description", "design", 46),
     ("How it would work", "design", 56),
     ("ARCore relevance", "design", 10),
     ("How ARCore helps", "design", 44),
@@ -561,6 +707,11 @@ for i, r in enumerate(ROWS):
         "Live today": "Yes" if r["CURRENT LIVE"] else "No",
         "Check family": dsg["family"],
         "What to measure or judge": dsg["measure"],
+        "SE Comments": None,
+        "Accuracy Requirements SE": None,
+        "Feasibility with Gyro": None,
+        "Approach group": APPROACH[sno][0],
+        "Approach description": APPROACH[sno][1],
         "Primary method": dsg["method"],
         "Automation level": dsg["level"],
         "Confidence": dsg["conf"],
@@ -578,6 +729,25 @@ for i, r in enumerate(ROWS):
         "Validation sample (n)": None, "Last updated": None, "Notes": None,
         "qc_id": r["qc_id"],
     }
+    # The team's export wins where it has a value
+    ov = OVERLAY_ROWS.get(sno, {})
+    for h in OVERLAY_TEXT_COLS:
+        if ov.get(h):
+            values[h] = ov[h]
+    if ov.get("Approach group"):
+        values["Approach group"] = ov["Approach group"]
+    if ov.get("Approach description"):
+        values["Approach description"] = ov["Approach description"]
+    elif sno in OVERLAY_RAW_APPROACH and sno not in APPROACH:
+        values["Approach description"] = OVERLAY_RAW_APPROACH[sno]
+    if ov.get("Validation accuracy"):
+        values["Validation accuracy"] = parse_percent(ov["Validation accuracy"])
+    if ov.get("Validation sample (n)", "").isdigit():
+        values["Validation sample (n)"] = int(ov["Validation sample (n)"])
+    if ov.get("Last updated"):
+        values["Last updated"] = parse_date(ov["Last updated"])
+    if ov.get("Same detector as (ID)", "").isdigit():
+        values["Same detector as (ID)"] = int(ov["Same detector as (ID)"])
     for h, _, _ in HEADERS:
         ws[f"{COL[h]}{row}"] = values[h]
     # formats per group
@@ -598,7 +768,8 @@ for i, r in enumerate(ROWS):
     ws[f"{COL['Validation sample (n)']}{row}"].number_format = "0"
     ws[f"{COL['Last updated']}{row}"].number_format = "yyyy-mm-dd"
     for h in ("ID (sno)", "No-go", "In 2.0", "Live today", "Same detector as (ID)", "Extra SE time (s)",
-              "Validation sample (n)", "Confidence", "Automation level", "Primary method", "ARCore relevance"):
+              "Validation sample (n)", "Confidence", "Automation level", "Primary method", "ARCore relevance",
+              "Feasibility with Gyro"):
         ws[f"{COL[h]}{row}"].alignment = Alignment(horizontal="center", vertical="top", wrap_text=True)
 
 set_widths(ws, WIDTHS)
@@ -631,6 +802,8 @@ add_list_validation(ws, '"' + ",".join(LEVELS) + '"', f"{COL['Automation level']
 add_list_validation(ws, '"' + ",".join(CONFIDENCES) + '"', f"{COL['Confidence']}{FIRST}:{COL['Confidence']}{RANGE_END}")
 add_list_validation(ws, f"=Methods!$A$2:$A${len(METHODS) + 1}", f"{COL['Primary method']}{FIRST}:{COL['Primary method']}{RANGE_END}")
 add_list_validation(ws, '"' + ",".join(ARCORE_LEVELS) + '"', f"{COL['ARCore relevance']}{FIRST}:{COL['ARCore relevance']}{RANGE_END}")
+add_list_validation(ws, '"' + ",".join(FEASIBILITY) + '"', f"{COL['Feasibility with Gyro']}{FIRST}:{COL['Feasibility with Gyro']}{RANGE_END}")
+add_list_validation(ws, '"' + ",".join(APPROACH_GROUPS) + '"', f"{COL['Approach group']}{FIRST}:{COL['Approach group']}{RANGE_END}")
 
 # Conditional formatting on Status and Automation level
 status_ref = f"{COL['Status']}{FIRST}:{COL['Status']}{RANGE_END}"
@@ -646,6 +819,18 @@ for label, color in (("Full", "C6EFCE"), ("Partial", "FFEB9C"), ("Evidence", "DD
 ar_ref = f"{COL['ARCore relevance']}{FIRST}:{COL['ARCore relevance']}{RANGE_END}"
 for label, color in (("Core", "C6EFCE"), ("Helps", "DDEBF7"), ("No", "D9D9D9")):
     ws.conditional_formatting.add(ar_ref, CellIsRule(operator="equal", formula=[f'"{label}"'],
+                                                     fill=PatternFill("solid", fgColor=color)))
+
+ag_ref = f"{COL['Approach group']}{FIRST}:{COL['Approach group']}{RANGE_END}"
+for label, color in (("Gyro + Gemini: appearance", "C6EFCE"), ("Gyro + Gemini: geometry", "C6EFCE"),
+                     ("Gyro + Gemini: height", "C6EFCE"), ("Gyro + Gemini: known object as scale", "C6EFCE"),
+                     ("New action: phone IMU", "FFEB9C"), ("New action: photo with tape or tool", "FFEB9C"),
+                     ("New action: short video", "FFEB9C"), ("Not a QC", "D9D9D9"), ("To be decided", "F8CBAD")):
+    ws.conditional_formatting.add(ag_ref, CellIsRule(operator="equal", formula=[f'"{label}"'],
+                                                     fill=PatternFill("solid", fgColor=color)))
+fg_ref = f"{COL['Feasibility with Gyro']}{FIRST}:{COL['Feasibility with Gyro']}{RANGE_END}"
+for label, color in (("High", "C6EFCE"), ("Medium", "FFEB9C"), ("Low", "F8CBAD")):
+    ws.conditional_formatting.add(fg_ref, CellIsRule(operator="equal", formula=[f'"{label}"'],
                                                      fill=PatternFill("solid", fgColor=color)))
 
 # Named ranges for formulas elsewhere (plain A1 ranges are used; these are documented helpers)
@@ -828,6 +1013,31 @@ label(wd, f"A{r}", "Total", bold=True)
 num(wd, f"B{r}", f"=SUM(B{r0 + 1}:B{r - 1})")
 num(wd, f"C{r}", f"=SUM(C{r0 + 1}:C{r - 1})")
 
+# By approach group (below the ARCore block)
+AG, FG = tr("Approach group"), tr("Feasibility with Gyro")
+r0 = r + 2
+head(wd, [(f"A{r0}", "Approach group"), (f"B{r0}", "Checks"), (f"C{r0}", "Of which critical")])
+for i, g in enumerate(APPROACH_GROUPS):
+    r = r0 + 1 + i
+    label(wd, f"A{r}", g)
+    num(wd, f"B{r}", f"=COUNTIF({AG},A{r})")
+    num(wd, f"C{r}", f"=COUNTIFS({AG},A{r},{PR},\"CRITICAL\")")
+r = r0 + 1 + len(APPROACH_GROUPS)
+label(wd, f"A{r}", "Total", bold=True)
+num(wd, f"B{r}", f"=SUM(B{r0 + 1}:B{r - 1})")
+num(wd, f"C{r}", f"=SUM(C{r0 + 1}:C{r - 1})")
+
+# By feasibility with gyro, as rated by the SE (below the stage block)
+r0 = 28 + len(stages) + 2
+head(wd, [(f"E{r0}", "Feasibility with Gyro (SE)"), (f"F{r0}", "Checks")])
+for i, lv in enumerate(FEASIBILITY):
+    r = r0 + 1 + i
+    label(wd, f"E{r}", lv)
+    num(wd, f"F{r}", f"=COUNTIF({FG},E{r})")
+r = r0 + 1 + len(FEASIBILITY)
+label(wd, f"E{r}", "Not rated")
+num(wd, f"F{r}", f"=$B$5-SUM(F{r0 + 1}:F{r - 1})")
+
 set_widths(wd, {"A": 46, "B": 10, "C": 16, "D": 20, "E": 40, "F": 11, "G": 11, "H": 12, "I": 9})
 wd.freeze_panes = "A4"
 
@@ -961,6 +1171,12 @@ pair("Confidence", "How likely the primary method reaches useful accuracy in pro
 pair("Same detector as", "The ID of the check whose detector also serves this row. Build it once and run it at both stages.")
 pair("ARCore relevance", "Core: the measurement relies on ARCore poses, gravity, the floor plane or wall planes. Helps: better accuracy or "
      "robustness, but the check works without it. No: ARCore adds nothing to this check.")
+pair("Approach group", "The team's own plan for the check, in nine groups. Four gyro groups split by what Gemini has to judge: "
+     "appearance (presence, finish, type), geometry (angles, plumb, level, alignment), height, or a known object used as the scale. "
+     "Three new-action groups by what the SE does: phone IMU, a photo with the tape or tool in place, or a short video. "
+     "Then Not a QC, and To be decided.")
+pair("SE columns", "SE Comments, Accuracy Requirements SE and Feasibility with Gyro are the site engineer's own notes, carried over "
+     "from the tracker export.")
 r = R[0]
 wr[f"B{r}"] = "Distinct detectors"; wr[f"B{r}"].font = F_BOLD
 wr[f"C{r}"] = '=Dashboard!B6&" detectors cover "&Dashboard!B5&" checks."'; wr[f"C{r}"].font = F_GREEN; R[0] += 1
