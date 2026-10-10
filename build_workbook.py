@@ -30,12 +30,18 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("source", nargs="?", default="data/qc_post_wall_source.csv", help="post-wall QC export (CSV)")
 ap.add_argument("out", nargs="?", default="qc_automation_tracker.xlsx", help="workbook to write")
+ap.add_argument("--extra", action="append", default=[], metavar="CSV",
+                help="additional checks as headerless rows in the source column order; rows whose first cell "
+                     "is not a number are skipped; appended after the main rows")
 ap.add_argument("--overlay", default=None, metavar="TRACKER_CSV",
                 help="the QC Tracker tab exported as CSV; its SE, approach and tracking columns override the script")
 args = ap.parse_args()
 SRC, OUT = Path(args.source), Path(args.out)
+EXTRA = [Path(x) for x in args.extra]
 OVERLAY = Path(args.overlay) if args.overlay else None
 SOURCE_NOTE = "Source: Tool QC Automation - Sheet2.csv (post-wall QC export), uploaded 2026-10-07"
+if EXTRA:
+    SOURCE_NOTE += "; additional checks from " + ", ".join(x.name for x in EXTRA) + " (the date is in the file name)"
 
 # ----------------------------------------------------------------------------
 # Method catalogue (codes used in the tracker's "Primary method" column)
@@ -66,6 +72,10 @@ METHODS = [
      "Lays the phone flat on the surface for two seconds, at two or three points.",
      20, "About ±0.1° (1 mm per metre) after a one-time calibration.",
      "S", "Needs a flat phone back or a flat case. Good for slopes of 1 % and above."),
+    ("MIC", "Phone microphone as instrument",
+     "Taps each tile with a coin or a small mallet while the phone records a short video. The tapping is today's method; the extra is the recording.",
+     30, "Hollow against solid from the tap sound; a clear spectral difference, but it needs a labelled sample set from your tiles and adhesive.",
+     "M", "Site noise and tile type change the sound; calibrate per tile type. The frames show which tile was tapped."),
     ("BT-TOOL", "Bluetooth laser meter or digital level",
      "Takes the reading with the tool; the app receives it over Bluetooth.",
      30, "Millimetre grade.",
@@ -318,6 +328,107 @@ DESIGN = {
            "TAP", "Full", "High",
            "One close-up per bathroom wall with a tile edge in frame; the tile size gives the scale and joints measure to about 0.3 mm. Spacer presence can be checked in the same photo.",
            "G-GEO coarse check: course pitch minus tile size over several courses.", "Tile size; limit of 3 mm.", "Under 3 mm"),
+    # Checks added on 2026-10-10 (previously outside the gyro set)
+    39: d("Workmanship defect", "Bond pattern (no continuous vertical joints), filled joints, broken or chipped blocks, clean faces.",
+          "G-VIS", "Partial", "Medium",
+          "The vision model scores each rectified wall against a workmanship rubric: staggered vertical joints, joints fully filled, no broken blocks, no mortar smears. Straightness and joint thickness are covered by IDs 31 and 36.",
+          "TAP close-ups where the model is unsure.", "Your blockwork workmanship rubric.", "Rubric pass"),
+    42: d("Workmanship defect", "Exposed reinforcement at lintel ends or faces; packing done where it was exposed.",
+          "G-VIS", "Partial", "Medium",
+          "The vision model flags exposed rebar (rust-coloured bars against concrete) in the frames around the lintels; a flagged spot after packing should read as a patched surface. Small exposures far from the tripod can be missed.",
+          "TAP close-up of each flagged spot.", "None.", "No exposed steel visible"),
+    47: d("Size against drawing", "Bar diameter and spacing in both directions against the structural drawing.",
+          "TAP", "Partial", "Medium",
+          "One photo of the cage with a tape or a 100 mm tag laid on it. Spacing reads from the photo to about ±5 mm; diameter needs a close-up (8, 10 and 12 mm bars differ by 2 mm, which needs about 0.3 mm per pixel). The vision model counts the bars and reads the tape.",
+          "MANUAL: the SE reads the diameter from the bar marking or with a vernier.", "Structural drawing (bar diameter, spacing).", "Spacing ± 10 mm; diameter as per drawing"),
+    61: d("Size against drawing", "Bar diameter and spacing against the structural drawing (lintel).",
+          "TAP", "Partial", "Medium",
+          "Same detector as ID 47, on the lintel cage.",
+          "MANUAL: diameter from the bar marking.", "Structural drawing.", "Spacing ± 10 mm; diameter as per drawing", same=47),
+    68: d("Workmanship defect", "Exposed reinforcement on the staircase after concreting.",
+          "G-VIS", "Partial", "Medium",
+          "Same detector as ID 42, run on the staircase frames (soffit, waist, risers).",
+          "TAP close-up of each flagged spot.", "None.", "No exposed steel visible", same=42),
+    80: d("Squareness and plumb", "Room diagonals equal; corner angles 90°.",
+          "G-GEO", "Partial", "Medium",
+          "Same detector as ID 318: corner angles from the recovered floor plan, about ±1°. Equal diagonals to 10 mm on a 3 m room need 0.2°, so this is screening only.",
+          "BT-TOOL laser meter: two diagonal readings give the squareness exactly.", "Tolerance.", "Diagonals within 10 mm", same=318),
+    81: d("Size against drawing", "Opening width and height against the frame size plus 25 mm.",
+          "G-GEO", "Partial", "Low",
+          "Same detector as ID 125, measuring the raw opening before the frames go in. The gyro's ±20–30 mm at 3 m equals the clearance itself, so it can only flag openings that are clearly tight or oversized.",
+          "TAP with the tape across the opening. Tags on the datum line bring the gyro to about ±10 mm.", "Door and window schedule (frame sizes).", "Clearance 25 mm, −0 / +15 mm", same=125),
+    147: d("Surface finish", "Ceiling fittings (fan hooks, light points, boxes) flush and finished, no gaps.",
+           "G-VIS", "Full", "Medium",
+           "The upward band of the sweep shows the ceiling fittings; the vision model checks each for gaps, exposed wires and finish. Needs a band near +90° so the ceiling centre is covered.",
+           "TAP close-up where the model is unsure.", "Finish rubric.", "Rubric pass"),
+    184: d("Process and approval", "Handover letter signed by the client.",
+           "ATTEST", "Evidence", "High",
+           "An e-signature step in the app (OTP or a drawn signature on the letter). The signed document is the record.",
+           "Photo of the signed paper letter.", "Handover letter template.", "Signature present"),
+    196: d("Height and position", "SFL mark present on the room's walls and at the same height as the reference at the entrance.",
+           "G-VIS", "Partial", "Low",
+           "The vision model looks for the SFL line on each wall in the sweep; pencil or chalk marks are faint from the room centre. Height consistency with the entrance mark needs a common frame across rooms.",
+           "TAP photo of the mark with a tape from the slab.", "SFL value from the drawing.", "Mark present; height within 5 mm of the reference"),
+    201: d("Presence and spec match", "Every MEP item in the drawing is present: floor traps, pipe stubs, conduits, boxes.",
+           "G-GEO", "Partial", "Medium",
+           "Same detector family as ID 317: detect the visible MEP items on the rectified walls and the top-down floor and compare count and positions with the plumbing and electrical layouts. Items concealed in chases or under the screed cannot be verified from images.",
+           "ATTEST: MEP supervisor sign-off on a marked-up drawing.", "Plumbing and electrical layouts.", "All visible items present; position ± 50 mm", same=317),
+    205: d("Slope", "Floor slope toward the drain after tiling.",
+           "IMU", "Partial", "Medium",
+           "Same as ID 206, on the finished tiles: the phone laid flat at two or three points reads the slope to about 0.1°.",
+           "ATTEST: short video of water running to the drain.", "Required slope.", "Slope at or above spec, toward the drain", same=206),
+    299: d("Process and approval", "Mix proportion and materials at batching.",
+           "ATTEST", "Evidence", "Low",
+           "A short video of the batching: gauge boxes or bags counted per batch, sand type, water. The vision model can count bags and boxes; it cannot verify a ratio once mixed.",
+           "MANUAL: cube or field test records where the contract requires them.", "Contract mix spec.", "Batching matches the spec"),
+    301: d("Presence and spec match", "Grill design and size against the drawing; client approval recorded.",
+           "G-VIS", "Partial", "Medium",
+           "Same spec-match detector as ID 125: the vision model compares the grill in the sweep with the drawing or the approved design image; size from the rectified wall. The approval is an ATTEST step.",
+           "TAP close-up of the grill.", "Grill drawing or approved design image.", "Design matches; approval present", same=125),
+    304: d("Process and approval", "Bonding agent added to the mortar at the specified dose.",
+           "ATTEST", "Evidence", "Low",
+           "Same evidence flow as ID 299; the video must show the bonding agent container and its dosing.",
+           "MANUAL: consumption against the area plastered.", "Contract spec (product, dose).", "Dosing matches the spec", same=299),
+    312: d("Workmanship defect", "Exposed slab or lintel steel in chases, packed before plastering.",
+           "G-VIS", "Partial", "Medium",
+           "Same detector as ID 42, run after chasing and conduit fixing.",
+           "TAP close-up of each flagged spot.", "None.", "No exposed steel visible", same=42),
+    322: d("Process and approval", "Client approval of the plumbing point locations recorded.",
+           "ATTEST", "Evidence", "High",
+           "Same approval flow as ID 199: the marked points (sweep frames or the plumbing layout) go to the client for an OTP or signature approval.",
+           "Site-visit sign-off photo.", "Plumbing layout.", "Approval present", same=199),
+    326: d("Workmanship defect", "Plaster hardness: a scratch leaves a clean line without powdering or crumbling.",
+           "TAP", "Partial", "Medium",
+           "The SE scratches the plaster with a nail or a key and photographs the mark close up; the vision model judges a clean line against powdering or flaking. The app enforces the 7-day gap from the plastering date.",
+           "MANUAL judgement by the SE, recorded with the photo.", "Plastering completion date.", "No powdering or crumbling"),
+    430: d("Process and approval", "Client confirmation of the dado tile pattern recorded.",
+           "ATTEST", "Evidence", "High",
+           "Same approval flow as ID 199, for the dado pattern.",
+           "Site-visit sign-off photo.", "Tile layout drawing.", "Approval present", same=199),
+    439: d("Presence and spec match", "Chases filled, mesh over pipe runs, surface hacked or roughened, clean, plumbing lines in place.",
+           "G-VIS", "Partial", "Medium",
+           "The vision model checks each rectified wall for filled chases, chicken mesh over the pipe runs, a hacked or roughened surface and no loose material. Pipe pressure testing is not visible and stays an ATTEST item.",
+           "TAP close-ups of the chases.", "Surface preparation rubric.", "Rubric pass"),
+    447: d("Workmanship defect", "Hollow (debonded) tiles found by tap sound.",
+           "MIC", "Partial", "Medium",
+           "The SE taps each tile with a coin or a small mallet while the phone records a short video; the tap sounds are classified hollow or solid and the frames show which tile was tapped. Needs a labelled sample set from your tiles and adhesive.",
+           "MANUAL tap test by the SE, marking hollow tiles in the app.", "Tile and adhesive type; sample recordings.", "No hollow tiles"),
+    448: d("Process and approval", "Water level held for 48 h; no damp on the soffit below.",
+           "ATTEST", "Evidence", "Medium",
+           "Two time-stamped photos from the same spot 48 h apart with a tape or a mark at the waterline, plus one of the ceiling below. The vision model compares the waterline with the mark and reads the soffit for damp patches. The app enforces the 48 h gap.",
+           "TAP close-up of the waterline and the mark.", "None.", "No drop beyond evaporation (a few mm); no damp below"),
+    450: d("Process and approval", "Curing maintained for the required days.",
+           "ATTEST", "Evidence", "Medium",
+           "One photo per day for the curing period; the vision model confirms a wet or ponded surface and the timestamps prove the duration.",
+           "MANUAL record.", "Curing days from spec.", "All days present and wet"),
+    451: d("Process and approval", "Screed mix proportion at batching.",
+           "ATTEST", "Evidence", "Low",
+           "Same evidence flow as ID 299, for the screed batching.",
+           "MANUAL: cube test records where required.", "Screed spec.", "Batching matches the spec", same=299),
+    453: d("Presence and spec match", "Concrete haunch (fillet) at every wall-floor junction in wet areas.",
+           "G-VIS", "Full", "Medium",
+           "The downward band of the sweep shows the wall-floor junction all round; the vision model checks for the haunch on every wall. Haunch size can be read from the rectified wall if your spec gives one.",
+           "TAP close-up at a junction.", "Haunch size from spec, if any.", "Haunch present on every wall"),
     456: d("Height and position", "Top edge of the coat above floor on every wet-area wall.",
            "G-GEO", "Full", "High",
            "The coat is a distinct colour. Detect its top edge on each wall, convert to height above the floor line, compare with 300 mm and flag gaps.",
@@ -385,6 +496,31 @@ ARCORE = {
     438: ("No", "Visual presence of marks."),
     441: ("Helps", "Hit-test distance gives the pixel scale on the close-up. The tile edge remains the finer ruler."),
     456: ("Core", "Floor plane gives the height of the coat's top edge even where the floor-wall junction is hidden."),
+    39: ("Helps", "Poses give the flat per-wall view for the rubric; no measurement involved."),
+    42: ("No", "Visual detection of exposed bars; the frames are enough."),
+    47: ("Helps", "Hit-test distance gives the pixel scale for the spacing photo, so the tape is optional. Diameter still needs the close-up."),
+    61: ("Helps", "Same as ID 47."),
+    68: ("No", "Same as ID 42."),
+    80: ("Core", "Same as ID 318: wall-plane normals give the corner angles; textured blockwork detects well."),
+    81: ("Core", "Wall plane and intrinsics give the opening size; with a tag on the datum line, about ±10 mm."),
+    147: ("No", "Visual judgement of the ceiling fittings; the frames are enough."),
+    184: ("No", "A signature record."),
+    196: ("Helps", "Walk from the entrance to the room with the session running: the SFL marks are compared in one world frame to about 1–2 cm, which catches a wrong transfer but not a 5 mm one."),
+    201: ("Core", "Poses, wall planes and the floor plane place each MEP item for the comparison with the drawing."),
+    205: ("No", "Raw accelerometer. ARCore's floor-plane normal (0.5–1°) is too coarse for a 0.6° slope."),
+    299: ("No", "A batching record."),
+    301: ("Helps", "Rectified per-opening crop and the grill size from the wall plane."),
+    304: ("No", "A batching record."),
+    312: ("No", "Same as ID 42."),
+    322: ("No", "An approval record."),
+    326: ("No", "A close-up judgement; no measurement."),
+    430: ("No", "An approval record."),
+    439: ("Helps", "Poses give the flat per-wall view for the rubric."),
+    447: ("Helps", "Poses locate each tap on the wall, so hollow tiles are mapped rather than counted."),
+    448: ("Helps", "A hit test on the wall mark anchors both photos to the same height. Keep tracking on the wall; the water surface confuses plane detection."),
+    450: ("No", "A curing record."),
+    451: ("No", "A batching record."),
+    453: ("Helps", "Floor plane and poses give the haunch size from the junction geometry if your spec sets one."),
 }
 ARCORE_LEVELS = ["Core", "Helps", "No"]
 
@@ -400,6 +536,7 @@ APPROACH_GROUPS = [
     "New action: phone IMU",
     "New action: photo with tape or tool",
     "New action: short video",
+    "New action: evidence photo",
     "Not a QC",
     "To be decided",
 ]
@@ -467,6 +604,31 @@ APPROACH = {
     438: ("New action: phone IMU", "Straight edge across the bull marks with the phone on it."),
     441: ("Gyro + Gemini: appearance", "Spacers must be present in at least a few joints."),
     456: ("Gyro + Gemini: height", "Take frames from the gyro and ask Gemini (height of the coat line)."),
+    39: ("Gyro + Gemini: appearance", "Suggested: Gemini scores the blockwork in the sweep against a workmanship rubric, per wall."),
+    42: ("Gyro + Gemini: appearance", "Suggested: Gemini flags exposed rebar in the sweep frames around the lintels."),
+    47: ("New action: photo with tape or tool", "Suggested: photo of the cage with a tape across the bars; spacing from the photo, diameter from a close-up."),
+    61: ("New action: photo with tape or tool", "Suggested: same as ID 47, on the lintel cage."),
+    68: ("Gyro + Gemini: appearance", "Suggested: same as ID 42, on the staircase frames."),
+    80: ("Gyro + Gemini: geometry", "Suggested: corner angles from the sweep as for ID 318; laser meter on both diagonals when flagged."),
+    81: ("New action: photo with tape or tool", "Suggested: photo with the tape across the opening; the gyro's ±25 mm is too coarse for a 25 mm clearance."),
+    147: ("Gyro + Gemini: appearance", "Suggested: upward band of the sweep; Gemini checks the ceiling fittings for gaps and finish."),
+    184: ("Not a QC", "Suggested: e-signature step in the app."),
+    196: ("Gyro + Gemini: height", "Suggested: Gemini finds the SFL mark on each wall in the sweep; heights compared with the entrance mark."),
+    201: ("Gyro + Gemini: appearance", "Suggested: from the sweep, Gemini lists the MEP points it sees per wall and on the floor and compares with the drawing's list."),
+    205: ("New action: phone IMU", "Suggested: phone laid on the tiles at two or three points, as for ID 206."),
+    299: ("New action: short video", "Suggested: short video of the batching (gauge boxes, bags) at mixing."),
+    301: ("Gyro + Gemini: appearance", "Suggested: Gemini compares the grill in the sweep with the drawing or the approved design image."),
+    304: ("New action: short video", "Suggested: short video of the batching showing the bonding agent container and its dosing."),
+    312: ("Gyro + Gemini: appearance", "Suggested: same as ID 42, after chasing."),
+    322: ("Not a QC", "Suggested: client approval step in the app, as for ID 199."),
+    326: ("New action: photo with tape or tool", "Suggested: photo of the scratch mark with the tool in frame; Gemini judges powdering."),
+    430: ("Not a QC", "Suggested: client approval step in the app, as for ID 199."),
+    439: ("Gyro + Gemini: appearance", "Suggested: Gemini checks the sweep for filled chases, mesh over the pipe runs, a hacked surface and cleanliness."),
+    447: ("New action: short video", "Suggested: tap each tile with a coin while recording; the tap sound is classified hollow or solid."),
+    448: ("New action: photo with tape or tool", "Suggested: two photos 48 h apart with a tape at the waterline, plus one of the ceiling below."),
+    450: ("New action: evidence photo", "Suggested: one photo per curing day showing the wet or ponded screed."),
+    451: ("New action: short video", "Suggested: short video of the screed batching at mixing."),
+    453: ("Gyro + Gemini: appearance", "Suggested: downward band of the sweep; Gemini checks the haunch at every wall-floor junction."),
 }
 FEASIBILITY = ["High", "Medium", "Low"]
 
@@ -536,9 +698,23 @@ def fit_row_heights(ws, first_row, last_row, widths, min_h=15, max_h=170):
 with SRC.open(encoding="utf-8-sig", newline="") as fh:
     reader = csv.DictReader(fh)
     SRC_COLS = reader.fieldnames
-    ROWS = list(reader)
+    ROWS = [{k: (v or "").strip() for k, v in r.items()} for r in reader]
+for r in ROWS:
+    r["_source"] = SRC.name
 ROWS.sort(key=lambda r: int(r["sno"]))
-assert len(ROWS) == 55, len(ROWS)
+# Extra files: headerless rows in the source column order (a missing trailing column is blank).
+# Rows whose first cell is not a number (notes, legends) are skipped. Appended in file order.
+for x in EXTRA:
+    with x.open(encoding="utf-8-sig", newline="") as fh:
+        for raw in csv.reader(fh):
+            if not raw or not raw[0].strip().isdigit():
+                continue
+            raw = [c.strip() for c in raw] + [""] * (len(SRC_COLS) - len(raw))
+            rec = dict(zip(SRC_COLS, raw[:len(SRC_COLS)]))
+            rec["_source"] = x.name
+            ROWS.append(rec)
+seen = [r["sno"] for r in ROWS]
+assert len(seen) == len(set(seen)), f"duplicate sno: {[s for s in seen if seen.count(s) > 1]}"
 missing = [r["sno"] for r in ROWS if int(r["sno"]) not in DESIGN]
 assert not missing, f"no design for sno {missing}"
 missing_ar = [r["sno"] for r in ROWS if int(r["sno"]) not in ARCORE]
@@ -698,7 +874,8 @@ for i, r in enumerate(ROWS):
         "Task": r["task"],
         "QC check": r["qc"],
         "Sub-phase": r["Phase(More Divided)"],
-        "Current SE method": r["QC_TYPE_MEASUREMENT_VISUAL_TOOl"].strip().title(),
+        "Current SE method": (None if r["QC_TYPE_MEASUREMENT_VISUAL_TOOl"] in ("", "#REF!")
+                              else r["QC_TYPE_MEASUREMENT_VISUAL_TOOl"].title()),
         "Priority": r["qc_type"],
         "No-go": "Yes" if r["is_no_go"].upper() == "TRUE" else "No",
         "Level (2.0)": level_map.get(r["2_0_hierarchy"], r["2_0_hierarchy"]),
@@ -825,7 +1002,8 @@ ag_ref = f"{COL['Approach group']}{FIRST}:{COL['Approach group']}{RANGE_END}"
 for label, color in (("Gyro + Gemini: appearance", "C6EFCE"), ("Gyro + Gemini: geometry", "C6EFCE"),
                      ("Gyro + Gemini: height", "C6EFCE"), ("Gyro + Gemini: known object as scale", "C6EFCE"),
                      ("New action: phone IMU", "FFEB9C"), ("New action: photo with tape or tool", "FFEB9C"),
-                     ("New action: short video", "FFEB9C"), ("Not a QC", "D9D9D9"), ("To be decided", "F8CBAD")):
+                     ("New action: short video", "FFEB9C"), ("New action: evidence photo", "FFEB9C"),
+                     ("Not a QC", "D9D9D9"), ("To be decided", "F8CBAD")):
     ws.conditional_formatting.add(ag_ref, CellIsRule(operator="equal", formula=[f'"{label}"'],
                                                      fill=PatternFill("solid", fgColor=color)))
 fg_ref = f"{COL['Feasibility with Gyro']}{FIRST}:{COL['Feasibility with Gyro']}{RANGE_END}"
@@ -1075,22 +1253,27 @@ we.freeze_panes = "A2"
 # Tab: Source data (the export, unchanged)
 # ============================================================================
 wsrc = wb.create_sheet("Source data")
-for j, h in enumerate(SRC_COLS):
+SRC_TAB_COLS = SRC_COLS + ["source_file"]
+for j, h in enumerate(SRC_TAB_COLS):
     c = wsrc.cell(row=1, column=j + 1, value=h)
     c.font, c.fill, c.alignment, c.border = F_HEAD, FILL_HEAD, CENTER, BORDER
-wsrc["A1"].comment = Comment(SOURCE_NOTE + ". 55 rows, all columns as exported; nothing changed.", "Workbook notes")
+wsrc["A1"].comment = Comment(SOURCE_NOTE + f". {len(ROWS)} rows, all columns as exported, with the file each row came "
+                             "from in the last column. A #REF! in the export (a dead lookup) is written as "
+                             "'(broken formula in export)'.", "Workbook notes")
 for i, r in enumerate(ROWS):
-    for j, h in enumerate(SRC_COLS):
-        v = r[h]
+    for j, h in enumerate(SRC_TAB_COLS):
+        v = r["_source"] if h == "source_file" else r[h]
         if h == "sno":
             v = int(v)
         elif v == "":
             v = None
         c = wsrc.cell(row=i + 2, column=j + 1, value=v)
         c.font = F_GREY
-        if isinstance(v, str) and (v[:1] in "=+-@" ):
+        if isinstance(v, str) and (v[:1] in "=+-@"):
             c.value = "'" + v  # keep text as text
-for j, h in enumerate(SRC_COLS):
+        elif v == "#REF!":
+            c.value = "(broken formula in export)"  # a dead lookup in the sheet, carried over as text
+for j, h in enumerate(SRC_TAB_COLS):
     wsrc.column_dimensions[get_column_letter(j + 1)].width = 14 if h not in ("stage", "task", "qc") else 40
 wsrc.row_dimensions[1].height = 30
 wsrc.freeze_panes = "B2"
@@ -1131,7 +1314,7 @@ def pair(k, v, kfont=None):
     R[0] += 1
 
 para("Post-wall QC automation tracker", bold=True, size=14)
-para("55 post-wall quality checks from the QC sheet, each mapped to the cheapest capture method that could automate it, "
+para(f"{len(ROWS)} post-wall quality checks from the QC sheet, each mapped to the cheapest capture method that could automate it, "
      "with space to track the work.")
 blank()
 para("How to use this workbook", bold=True, size=11)
@@ -1143,7 +1326,7 @@ pair("Methods", "The method codes used in the tracker: what each asks of the sit
      "(blue cells, estimates you can edit) and the accuracy to expect. Changing a time here updates the tracker and the dashboard.")
 pair("Dashboard", "Counts by status, method, automation level, confidence, check family and stage. Formulas only; nothing to type.")
 pair("Experiments", "A log of what was tried and decided. The first row is an example to overwrite.")
-pair("Source data", "The QC sheet export as received, for reference. Columns left out of the tracker: those identical on every "
+pair("Source data", "The QC sheet exports as received, one row per check with the file it came from. Columns left out of the tracker: those identical on every "
      "row (Phase, Removal Status, GYRO+AI, 2D PHONE+AI, AI_NOT_ENABLED, measurement_type, hierarchy, 2_0_measurement_type), "
      "empty ones (capture_type, 2.0 Current, measurement_config) and admin fields (config_updated_on, stage_id, task_id, "
      "2_0_measurement_config, qc_category, task_type).")
@@ -1171,10 +1354,11 @@ pair("Confidence", "How likely the primary method reaches useful accuracy in pro
 pair("Same detector as", "The ID of the check whose detector also serves this row. Build it once and run it at both stages.")
 pair("ARCore relevance", "Core: the measurement relies on ARCore poses, gravity, the floor plane or wall planes. Helps: better accuracy or "
      "robustness, but the check works without it. No: ARCore adds nothing to this check.")
-pair("Approach group", "The team's own plan for the check, in nine groups. Four gyro groups split by what Gemini has to judge: "
+pair("Approach group", "The team's own plan for the check, in ten groups. Four gyro groups split by what Gemini has to judge: "
      "appearance (presence, finish, type), geometry (angles, plumb, level, alignment), height, or a known object used as the scale. "
-     "Three new-action groups by what the SE does: phone IMU, a photo with the tape or tool in place, or a short video. "
-     "Then Not a QC, and To be decided.")
+     "Four new-action groups by what the SE does: phone IMU, a photo with the tape or tool in place, a short video, or a plain "
+     "evidence photo. Then Not a QC, and To be decided. A description starting with 'Suggested:' is a proposal for a check the "
+     "team has not planned yet; overwrite it.")
 pair("SE columns", "SE Comments, Accuracy Requirements SE and Feasibility with Gyro are the site engineer's own notes, carried over "
      "from the tracker export.")
 r = R[0]
